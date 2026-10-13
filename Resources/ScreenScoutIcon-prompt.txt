@@ -1,0 +1,3 @@
+Generated with the built-in image generation tool.
+
+Use case: logo-brand. Asset type: polished macOS application icon for Screen Scout, a mouse automation utility. Create one square 1024x1024 icon: a deep charcoal rounded-square tile with a luminous mint-teal stylized mouse pointer inside four soft focus/scanner corner brackets. A restrained premium 3D illustration, soft bevels, subtle depth and studio highlights, bold simple silhouette readable at tiny Dock size. Center the design with balanced spacing. The tile fills about 88 percent of the canvas, with truly transparent outer corners and margin. Match a dark graphite and mint-teal visual identity. No text, letters, watermark, extra objects, mockup, or scenery. Return the icon artwork alone.
