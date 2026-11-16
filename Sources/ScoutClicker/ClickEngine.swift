@@ -57,6 +57,8 @@ public enum ClickStatus: String { case stopped = "Stopped", paused = "Paused", s
     private var cycleBegan = 0.0
     private var clickPoint: CGPoint?
     private var nextRegularClickAt: TimeInterval?
+    private var nextSecondaryAt: TimeInterval?
+    private var frozenSecondaryRemaining: TimeInterval?
     private var usesTravelCadence: Bool {
         settings.regularClickingEnabled && ((settings.smallMovementEnabled && settings.smallClickWhileMoving) ||
             (settings.largeMovementEnabled && settings.largeClickWhileMoving))
@@ -87,10 +89,15 @@ public enum ClickStatus: String { case stopped = "Stopped", paused = "Paused", s
     public func start(at position: CGPoint? = nil, settings: ClickSettings) {
         let resume = status == .paused && settings.timerEnabled && self.settings.timerEnabled && settings.timerDuration == self.settings.timerDuration
         let remaining = resume ? frozenRemaining : nil
+        let resumeSecondary = status == .paused && settings.secondaryClickEnabled && self.settings.secondaryClickEnabled &&
+            settings.secondaryMinInterval == self.settings.secondaryMinInterval && settings.secondaryMaxInterval == self.settings.secondaryMaxInterval &&
+            settings.movementDisplayIdentity == self.settings.movementDisplayIdentity && settings.movementRegions == self.settings.movementRegions
+        let secondaryRemaining = resumeSecondary ? frozenSecondaryRemaining : nil
         cancelPending(); output.release(); deadline = nil; delivered = false
+        nextSecondaryAt = nil; frozenSecondaryRemaining = nil
         guard settings.validationError == nil else { stop(settings.validationError!); return }
         guard output.available else { pause(output.failureReason); return }
-        guard settings.regularClickingEnabled || settings.movementEnabled || settings.timerEnabled else { stop("Enable clicking, movement, or the session timer before starting."); return }
+        guard settings.regularClickingEnabled || settings.movementEnabled || settings.timerEnabled || settings.secondaryClickEnabled else { stop("Enable clicking, movement, or the session timer before starting."); return }
         let candidate = position ?? target
         if settings.needsRegularTarget || position != nil {
             guard let candidate, output.allows(candidate) else { pause("Set a target on an active display, outside Screen Scout's visible controls."); return }
@@ -101,9 +108,18 @@ public enum ClickStatus: String { case stopped = "Stopped", paused = "Paused", s
         if settings.largeMovementEnabled && output.displayBounds(for: settings.movementDisplayID) == nil {
             stop("The selected movement display is unavailable. Choose an active display."); return
         }
+        if settings.secondaryClickEnabled {
+            guard let display = output.movementDisplay(for: settings.movementDisplayID),
+                  settings.movementDisplayIdentity == nil || settings.movementDisplayIdentity == display.identity,
+                  let profile = settings.movementRegions.first(where: { $0.displayIdentity == display.identity }),
+                  profile.secondaryDomain(for: display) != nil else {
+                stop("Draw a valid purple secondary click area on the selected display before starting."); return
+            }
+        }
         self.settings = settings; target = candidate; breakEndsAt = nil
         finalAttempted = false; awaitingFinalDelivery = false; clickPoint = nil
         nextRegularClickAt = usesTravelCadence ? scheduler.now + 0.135 : nil
+        if settings.secondaryClickEnabled { nextSecondaryAt = scheduler.now + (secondaryRemaining ?? random(settings.secondaryMinInterval...settings.secondaryMaxInterval)) }
         frozenRemaining = settings.timerEnabled ? (remaining ?? settings.timerDuration) : nil
         if let frozenRemaining { deadline = scheduler.now + frozenRemaining }
         status = settings.regularClickingEnabled ? .starting : .running
@@ -114,11 +130,13 @@ public enum ClickStatus: String { case stopped = "Stopped", paused = "Paused", s
     public func pause(_ reason: String = "Paused. F + G + H captures a new regular target and resumes.") {
         if status == .finishing { stop("Final click interrupted; it will not be retried."); return }
         frozenRemaining = remainingDuration; deadline = nil
+        frozenSecondaryRemaining = nextSecondaryAt.map { max(0, $0 - scheduler.now) }; nextSecondaryAt = nil
         cancelPending(); output.release(); breakEndsAt = nil; clickPoint = nil
         status = .paused; detail = reason; changed?()
     }
     public func stop(_ reason: String = "Stopped. No clicks, movement, timer, or breaks are queued.") {
         cancelPending(); output.release(); deadline = nil; frozenRemaining = nil
+        nextSecondaryAt = nil; frozenSecondaryRemaining = nil
         breakEndsAt = nil; clickPoint = nil; awaitingFinalDelivery = false
         status = .stopped; detail = reason; changed?()
     }
@@ -163,6 +181,9 @@ public enum ClickStatus: String { case stopped = "Stopped", paused = "Paused", s
         }
     }
     private func prepareCycle(allowBreak: Bool) {
+        if settings.secondaryClickEnabled, let nextSecondaryAt, scheduler.now >= nextSecondaryAt {
+            secondaryVisit { $0.prepareCycle(allowBreak: allowBreak) }; return
+        }
         if allowBreak && settings.breaksEnabled && random(0...1) < settings.breakProbability {
             let duration = random(settings.minBreak...settings.maxBreak)
             status = .takingBreak; breakEndsAt = scheduler.now + duration
@@ -370,10 +391,96 @@ public enum ClickStatus: String { case stopped = "Stopped", paused = "Paused", s
         else { wait = clickInterval() - (scheduler.now - began) }
         // Travel clicks never call this: movement decisions and breaks are sampled
         // once per action cycle, with no backlog of suppressed or delayed clicks.
-        schedule(max(0.02, wait)) { $0.prepareCycle(allowBreak: true) }
+        waitForCycle(until: scheduler.now + max(0.02, wait))
+    }
+    private func waitForCycle(until cycleDue: TimeInterval) {
+        if settings.secondaryClickEnabled, let nextSecondaryAt, nextSecondaryAt <= cycleDue {
+            schedule(max(0, nextSecondaryAt - scheduler.now)) { engine in
+                engine.secondaryVisit { $0.waitForCycle(until: cycleDue) }
+            }
+        } else {
+            schedule(max(0, cycleDue - scheduler.now)) { $0.prepareCycle(allowBreak: true) }
+        }
+    }
+    private func finishSecondaryVisit(note: String? = nil, completion: (ClickEngine) -> Void) {
+        movementPhase = nil
+        if let note { movementNote = note }
+        nextSecondaryAt = scheduler.now + random(settings.secondaryMinInterval...settings.secondaryMaxInterval)
+        changed?()
+        guard active else { return }
+        completion(self)
+    }
+    private func secondaryVisit(completion: @escaping (ClickEngine) -> Void) {
+        guard let display = output.movementDisplay(for: settings.movementDisplayID),
+              settings.movementDisplayIdentity == nil || settings.movementDisplayIdentity == display.identity,
+              let profile = settings.movementRegions.first(where: { $0.displayIdentity == display.identity }),
+              let domain = profile.secondaryDomain(for: display), let area = profile.secondaryClickArea(for: display),
+              let start = output.currentPosition(), domain.contains(start) else {
+            finishSecondaryVisit(note: "Secondary click skipped: the display, purple area, or current pointer is unavailable.", completion: completion); return
+        }
+        let back = settings.regularClickingEnabled ? (target ?? start) : start
+        guard domain.contains(back), output.allows(back) else {
+            finishSecondaryVisit(note: "Secondary click skipped: the return position is outside the permitted display or inside a blocked area.", completion: completion); return
+        }
+        let planningLimit = ProcessInfo.processInfo.systemUptime + 0.08
+        for _ in 0..<12 {
+            if ProcessInfo.processInfo.systemUptime > planningLimit { break }
+            let destination = CGPoint(x: random(area.minX...area.maxX), y: random(area.minY...area.maxY))
+            guard domain.contains(destination), output.allows(destination),
+                  let outward = CurvedMovement.plan(from: start, to: destination, domain: domain, random: random),
+                  let inward = CurvedMovement.plan(from: destination, to: back, domain: domain, random: random) else { continue }
+            movementNote = nil; movementPhase = "Secondary outward"; changed?()
+            secondaryMovePath(outward.points, index: 0, domain: domain, expected: start) { engine in
+                engine.movementPhase = "Secondary click"; engine.changed?()
+                guard engine.active else { return }
+                if let deadline = engine.deadline, engine.scheduler.now >= deadline { engine.expire(); return }
+                // Never click a stale planned coordinate after manual displacement.
+                guard let actual = engine.output.currentPosition(), movementDistance(actual, destination) <= 1,
+                      area.contains(actual), domain.contains(actual), engine.output.allows(actual) else {
+                    engine.pause("Secondary click interrupted: the pointer did not arrive in the purple area."); return
+                }
+                do {
+                    try engine.output.down(engine.settings.button, at: actual)
+                    guard engine.active else { return }
+                    engine.schedule(0.028) { engine in
+                        do { try engine.output.up(engine.settings.button, at: actual) }
+                        catch { engine.pause(error.localizedDescription); return }
+                        engine.clicksPosted += 1
+                        guard engine.active else { return }
+                        engine.movementPhase = "Secondary return"; engine.changed?()
+                        guard engine.active else { return }
+                        engine.secondaryMovePath(inward.points, index: 0, domain: domain, expected: destination) {
+                            $0.finishSecondaryVisit(completion: completion)
+                        }
+                    }
+                } catch { engine.pause(error.localizedDescription) }
+            }
+            return
+        }
+        finishSecondaryVisit(note: "Secondary click skipped: no safe curved route to the purple area and back was found.", completion: completion)
+    }
+    /// Secondary trips reuse certified curves but have no en-route clicks. A
+    /// displaced pointer pauses the trip instead of jumping back onto its path.
+    private func secondaryMovePath(_ path: [CGPoint], index: Int, domain: MovementDomain, expected: CGPoint,
+                                   completion: @escaping (ClickEngine) -> Void) {
+        guard active else { return }
+        if let deadline, scheduler.now >= deadline { expire(); return }
+        guard let current = output.currentPosition(), movementDistance(current, expected) <= 1 else {
+            pause("Secondary movement interrupted by pointer movement. Resume explicitly to continue."); return
+        }
+        guard index < path.count else { completion(self); return }
+        let point = path[index]
+        guard domain.permitsSegment(current, point), output.allows(point) else {
+            pause("Secondary movement interrupted: the route is blocked or unavailable."); return
+        }
+        do { try output.move(to: point) }
+        catch { pause(error.localizedDescription); return }
+        guard active else { return }
+        schedule(0.018) { $0.secondaryMovePath(path, index: index + 1, domain: domain, expected: point, completion: completion) }
     }
     private func expire() {
         cancelPending(); output.release(); deadline = nil; frozenRemaining = 0
+        nextSecondaryAt = nil; frozenSecondaryRemaining = nil
         breakEndsAt = nil; clickPoint = nil
         guard settings.finalClickEffective else { complete("Timer complete. Session stopped."); return }
         guard !finalAttempted, let finalTarget, output.available, output.allows(finalTarget) else {

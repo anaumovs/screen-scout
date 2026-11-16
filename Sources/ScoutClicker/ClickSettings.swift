@@ -29,6 +29,9 @@ public struct ClickSettings: Codable, Equatable, Sendable {
     public var largeClickWhileMoving = false
     public var movementDisplayIdentity: String?
     public var movementRegions: [MovementRegionProfile] = []
+    public var secondaryClickEnabled = false
+    public var secondaryMinInterval = 5.0
+    public var secondaryMaxInterval = 10.0
     public var breaksEnabled = true
     public var clickVariationEnabled = false
     public var clickVariationRadius = 2.0
@@ -60,6 +63,7 @@ public struct ClickSettings: Codable, Equatable, Sendable {
         case regularClickingEnabled, randomIntervalsEnabled, movementEnabled, breaksEnabled, clickVariationEnabled, clickVariationRadius, movementMode, movementDisplayID
         case largeMovementSpeed, smallClickWhileMoving, largeClickWhileMoving
         case smallMovementEnabled, largeMovementEnabled, largeMovementProbability, movementDisplayIdentity, movementRegions
+        case secondaryClickEnabled, secondaryMinInterval, secondaryMaxInterval
         case timerEnabled, timerHours, timerMinutes, timerSeconds, finalClickEnabled, finalButton
     }
     public init(from decoder: Decoder) throws {
@@ -90,6 +94,9 @@ public struct ClickSettings: Codable, Equatable, Sendable {
         largeClickWhileMoving = try c.decodeIfPresent(Bool.self, forKey: .largeClickWhileMoving) ?? false
         movementDisplayIdentity = try c.decodeIfPresent(String.self, forKey: .movementDisplayIdentity)
         movementRegions = try c.decodeIfPresent([MovementRegionProfile].self, forKey: .movementRegions) ?? []
+        secondaryClickEnabled = try c.decodeIfPresent(Bool.self, forKey: .secondaryClickEnabled) ?? false
+        secondaryMinInterval = try c.decodeIfPresent(Double.self, forKey: .secondaryMinInterval) ?? 5
+        secondaryMaxInterval = try c.decodeIfPresent(Double.self, forKey: .secondaryMaxInterval) ?? 10
         movementDisplayID = try c.decodeIfPresent(UInt32.self, forKey: .movementDisplayID) ?? 0
         timerEnabled = try c.decodeIfPresent(Bool.self, forKey: .timerEnabled) ?? false
         timerHours = try c.decodeIfPresent(Int.self, forKey: .timerHours) ?? timerHours
@@ -119,6 +126,9 @@ public struct ClickSettings: Codable, Equatable, Sendable {
         try c.encode(largeClickWhileMoving, forKey: .largeClickWhileMoving)
         try c.encode(largeMovementProbability, forKey: .largeMovementProbability)
         try c.encode(movementRegions, forKey: .movementRegions)
+        try c.encode(secondaryClickEnabled, forKey: .secondaryClickEnabled)
+        try c.encode(secondaryMinInterval, forKey: .secondaryMinInterval)
+        try c.encode(secondaryMaxInterval, forKey: .secondaryMaxInterval)
         try c.encode(breaksEnabled, forKey: .breaksEnabled)
         try c.encode(clickVariationEnabled, forKey: .clickVariationEnabled)
         try c.encode(clickVariationRadius, forKey: .clickVariationRadius)
@@ -132,7 +142,8 @@ public struct ClickSettings: Codable, Equatable, Sendable {
         try c.encode(movementDisplayIdentity, forKey: .movementDisplayIdentity)
     }
     public var validationError: String? {
-        guard [minInterval, maxInterval, movementProbability, movementRadius, breakProbability, minBreak, maxBreak, clickVariationRadius, largeMovementProbability, largeMovementSpeed].allSatisfy(\.isFinite) else { return "Use finite numbers for all settings." }
+        guard [minInterval, maxInterval, movementProbability, movementRadius, breakProbability, minBreak, maxBreak, clickVariationRadius, largeMovementProbability, largeMovementSpeed, secondaryMinInterval, secondaryMaxInterval].allSatisfy(\.isFinite) else { return "Use finite numbers for all settings." }
+        guard secondaryMinInterval >= 0.2, secondaryMaxInterval >= secondaryMinInterval, secondaryMaxInterval <= 3600 else { return "Secondary-area intervals must be 0.2–3600 seconds, with maximum at least minimum." }
         guard minInterval >= 0.08, maxInterval >= minInterval, maxInterval <= 3600 else { return "Click intervals must be 0.08–3600 seconds, with maximum at least minimum." }
         guard (0...1).contains(movementProbability), (0...1).contains(largeMovementProbability), (0...1).contains(breakProbability) else { return "Frequencies must be between 0 and 100%." }
         guard (1...10).contains(largeMovementSpeed) else { return "Large-movement speed must be 1×–10×." }

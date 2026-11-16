@@ -88,7 +88,7 @@ struct ContentView: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
                     Text("Emergency stop: \(model.emergencyLabel)").font(.caption)
-                    Text("Moving your mouse does not pause.").font(.caption2).foregroundStyle(.secondary)
+                    Text(model.settings.secondaryClickEnabled ? "Moving your mouse pauses a secondary visit." : "Moving your mouse does not pause.").font(.caption2).foregroundStyle(.secondary)
                 }
             }.controlSize(.large)
             DisclosureGroup("Advanced", isExpanded: $advanced) {
@@ -124,9 +124,11 @@ struct ContentView: View {
                                 Text("Unavailable display — choose another").tag(model.settings.movementDisplayID)
                             }
                         }
-                        Button("Edit large-movement regions…") { model.editMovementRegions() }.disabled(model.regionEditing)
+                        Button("Edit movement / click areas…") { model.editMovementRegions() }.disabled(model.regionEditing)
                         Text("Each frequency is an independent chance per cycle. Both can run in sequence. Travel clicks are off unless enabled separately above. Curved returns end at the cycle’s click position; movement-only sessions can return to their starting point without a saved target.").font(.caption2).foregroundStyle(.secondary)
-                        Text("Allowed/blocked boxes apply to large movement only. Small movement, regular clicks and exact final clicks are unaffected.").font(.caption2).foregroundStyle(.secondary)
+                        Text("Green areas limit large movement. Red blocked areas also apply to secondary-area visits. Small movement, regular clicks and exact final clicks are unaffected.").font(.caption2).foregroundStyle(.secondary)
+                        Divider()
+                        secondaryClickOptions
                         Divider()
                         Toggle("Slight click-position variation", isOn: $model.settings.clickVariationEnabled)
                         number("Variation radius (screen points, 0–10)", $model.settings.clickVariationRadius).disabled(!model.settings.clickVariationEnabled)
@@ -158,6 +160,21 @@ struct ContentView: View {
             .background(Color(red: 0.075, green: 0.095, blue: 0.12)).tint(accent)
             .onChange(of: model.settings) { _, _ in model.settingsChanged() }
             .alert("Screen Scout", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("OK") { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
+    }
+    private var secondaryClickOptions: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Toggle("Secondary-area clicking", isOn: $model.settings.secondaryClickEnabled)
+            HStack {
+                number("Minimum wait (seconds)", $model.settings.secondaryMinInterval)
+                number("Maximum wait (seconds)", $model.settings.secondaryMaxInterval)
+            }.disabled(!model.settings.secondaryClickEnabled)
+            HStack {
+                Label("Purple click area", systemImage: "square.fill").foregroundStyle(.purple)
+                Spacer()
+                Button("Choose purple area…") { model.editMovementRegions(secondary: true) }.disabled(model.regionEditing)
+            }
+            Text("Draw one purple area on the active display. After each random wait, move there in a curve, click once with the selected mouse button, then curve back to the regular target or starting point. Waits restart after returning; a visit waits for current movement or a break to finish.").font(.caption2).foregroundStyle(.secondary)
+        }
     }
     private func number(_ title: String, _ value: Binding<Double>) -> some View {
         VStack(alignment: .leading, spacing: 5) { Text(title).font(.caption).foregroundStyle(.secondary); TextField(title, value: value, format: .number.precision(.fractionLength(2))).textFieldStyle(.roundedBorder) }.frame(maxWidth: .infinity)

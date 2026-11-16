@@ -112,16 +112,16 @@ import ScoutClicker
         settings.movementDisplayID = id
         settings.movementDisplayIdentity = mouse.movementDisplay(for: id)?.identity
     }
-    func editMovementRegions() {
+    func editMovementRegions(secondary: Bool = false) {
         guard !regionEditing, let display = mouse.movementDisplay(for: settings.movementDisplayID),
               let screen = NSScreen.screens.first(where: { screen in
                   guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32 else { return false }
                   return mouse.movementDisplay(for: id)?.identity == display.identity
               }) else { errorMessage = "Select an available movement display first."; return }
-        pause("Editing large-movement regions. Resume explicitly after Save or Cancel.")
+        pause("Editing movement / click areas. Resume explicitly after Save or Cancel.")
         regionEditing = true
         let profile = settings.movementRegions.first { $0.displayIdentity == display.identity }
-        regionEditor = MovementRegionEditor(screen: screen, display: display, profile: profile) { [weak self] boxes in
+        regionEditor = MovementRegionEditor(screen: screen, display: display, profile: profile, initialTool: secondary ? .secondary : .allowed) { [weak self] boxes in
             guard let self else { return }
             if let boxes {
                 self.settings.movementDisplayIdentity = display.identity

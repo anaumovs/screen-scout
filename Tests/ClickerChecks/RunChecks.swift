@@ -344,6 +344,7 @@ import ScoutClicker
         }
         movementChecks(test)
         travelClickChecks(test)
+        secondaryClickChecks(test)
         print("\(count) checks, \(failures) failures.")
         if failures > 0 { exit(1) }
     }

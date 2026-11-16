@@ -1,3 +1,7 @@
+# Screen Scout 2.4.0
+
+Adds optional secondary-area clicking in Advanced: draw a purple area, choose a minimum and maximum wait (defaults 5–10 seconds), and the pointer curves there, clicks once, and curves back. The option defaults off. Red blocked regions constrain these visits. Pause freezes the wait; Stop resets it. Moving the pointer during a visit pauses it.
+
 # Screen Scout 2.3 — macOS auto-clicker
 
 Screen Scout is a realistic auto clicker for macOS with customizable click timing, curved mouse movement, and automatic breaks. It can automate repetitive game tasks, such as Minecraft farms, with adjustable click and movement patterns for different games.

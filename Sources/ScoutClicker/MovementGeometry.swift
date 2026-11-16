@@ -10,7 +10,18 @@ public struct MovementBox: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var rect: CGRect // Display-local, top-left origin, logical screen points (not pixels).
     public var blocked: Bool
-    public init(rect: CGRect, blocked: Bool, id: UUID = UUID()) { self.id = id; self.rect = rect; self.blocked = blocked }
+    public var secondaryClick: Bool
+    public init(rect: CGRect, blocked: Bool, secondaryClick: Bool = false, id: UUID = UUID()) {
+        self.id = id; self.rect = rect; self.blocked = blocked; self.secondaryClick = secondaryClick
+    }
+    private enum CodingKeys: String, CodingKey { case id, rect, blocked, secondaryClick }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        rect = try c.decode(CGRect.self, forKey: .rect)
+        blocked = try c.decode(Bool.self, forKey: .blocked)
+        secondaryClick = try c.decodeIfPresent(Bool.self, forKey: .secondaryClick) ?? false
+    }
 }
 public struct MovementRegionProfile: Codable, Equatable, Sendable {
     public var displayIdentity: String
@@ -19,14 +30,34 @@ public struct MovementRegionProfile: Codable, Equatable, Sendable {
     public init(displayIdentity: String, referenceSize: CGSize, boxes: [MovementBox]) {
         self.displayIdentity = displayIdentity; self.referenceSize = referenceSize; self.boxes = boxes
     }
-    public func domain(for display: MovementDisplay) -> MovementDomain? {
-        guard display.identity == displayIdentity, display.bounds.size == referenceSize, boxes.count <= 32,
+    private func matches(_ display: MovementDisplay) -> Bool {
+        display.identity == displayIdentity && display.bounds.size == referenceSize && boxes.count <= 32 &&
+              boxes.filter(\.secondaryClick).count <= 1 &&
               boxes.allSatisfy({ box in
                   let r = box.rect
                   return [r.minX,r.minY,r.width,r.height].allSatisfy(\.isFinite) && r.width > 0 && r.height > 0 &&
-                      CGRect(origin: .zero, size: referenceSize).contains(r)
-              }) else { return nil }
-        return MovementDomain(bounds: display.bounds, allowed: boxes.filter { !$0.blocked }.map { $0.rect.offsetBy(dx: display.bounds.minX, dy: display.bounds.minY) }, blocked: boxes.filter(\.blocked).map { $0.rect.offsetBy(dx: display.bounds.minX, dy: display.bounds.minY) })
+                      CGRect(origin: .zero, size: referenceSize).contains(r) && !(box.blocked && box.secondaryClick)
+              })
+    }
+    public func domain(for display: MovementDisplay) -> MovementDomain? {
+        guard matches(display) else { return nil }
+        return MovementDomain(bounds: display.bounds, allowed: boxes.filter { !$0.blocked && !$0.secondaryClick }.map { $0.rect.offsetBy(dx: display.bounds.minX, dy: display.bounds.minY) }, blocked: boxes.filter(\.blocked).map { $0.rect.offsetBy(dx: display.bounds.minX, dy: display.bounds.minY) })
+    }
+    public func secondaryClickArea(for display: MovementDisplay) -> CGRect? {
+        guard matches(display), let box = boxes.first(where: \.secondaryClick) else { return nil }
+        return box.rect.offsetBy(dx: display.bounds.minX, dy: display.bounds.minY)
+    }
+    /// Purple selects the destination, while red boxes constrain the whole trip.
+    /// Green boxes retain their existing meaning for large random movement only.
+    public func secondaryDomain(for display: MovementDisplay) -> MovementDomain? {
+        guard let area = secondaryClickArea(for: display) else { return nil }
+        let domain = MovementDomain(bounds: display.bounds, blocked: boxes.filter(\.blocked).map { $0.rect.offsetBy(dx: display.bounds.minX, dy: display.bounds.minY) })
+        let xs = Array(Set([area.minX, area.maxX] + domain.blocked.flatMap { [$0.minX, $0.maxX] }.filter { $0 > area.minX && $0 < area.maxX })).sorted()
+        let ys = Array(Set([area.minY, area.maxY] + domain.blocked.flatMap { [$0.minY, $0.maxY] }.filter { $0 > area.minY && $0 < area.maxY })).sorted()
+        for x in 1..<xs.count { for y in 1..<ys.count {
+            if domain.contains(CGPoint(x: (xs[x-1]+xs[x])/2, y: (ys[y-1]+ys[y])/2)) { return domain }
+        } }
+        return nil
     }
 }
 

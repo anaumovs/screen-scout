@@ -315,6 +315,65 @@ import ScoutClicker
         check("Timer expiry cancels travel clicks and delivers one exact final pair",stopped && finals.count==1 && finalUps.count==1 && eventPoint(finals[0])==final && eventPoint(finalUps[0])==final && regular.allSatisfy {eventTime($0)<began+1},"\(regular.count) regular clicks; final at \(final)")
         model.stop()
     }
+    private func verifySecondaryClicking(emergency: ClickSettings) async throws {
+        guard let display = model.mouse.movementDisplay(for: 0) else { throw MouseFailure.unavailable("No secondary-area test display.") }
+        model.stop(); model.engine.clearTargets()
+        let area = CGRect(x: target.x + 120, y: target.y - 25, width: 50, height: 50)
+        guard display.bounds.contains(area) else { throw MouseFailure.unavailable("Display is too small for the secondary-area test.") }
+        var settings = ClickSettings()
+        settings.emergencyCode = emergency.emergencyCode; settings.emergencyModifiers = emergency.emergencyModifiers
+        settings.smallMovementEnabled = false; settings.largeMovementEnabled = false; settings.breaksEnabled = false
+        settings.minInterval = 100; settings.maxInterval = 100; settings.button = .right
+        settings.secondaryClickEnabled = true; settings.secondaryMinInterval = 1; settings.secondaryMaxInterval = 1
+        settings.movementDisplayIdentity = display.identity
+        settings.movementRegions = [MovementRegionProfile(displayIdentity: display.identity, referenceSize: display.bounds.size, boxes: [
+            MovementBox(rect: area.offsetBy(dx: -display.bounds.minX, dy: -display.bounds.minY), blocked: false, secondaryClick: true)
+        ])]
+        model.settings = settings; await sleep(0.15)
+        pad?.activate(options: [.activateAllWindows]); await sleep(0.1); try focusGuard()
+        try model.mouse.move(to: target); await sleep(0.08)
+        var phases: [(String, Double)] = []
+        var returned = false
+        let previousChanged = model.engine.changed
+        model.engine.changed = { [weak model] in
+            previousChanged?()
+            guard let model else { return }
+            if let phase = model.engine.movementPhase, phase.hasPrefix("Secondary"), phases.last?.0 != phase {
+                phases.append((phase, model.clock))
+            }
+            if phases.last?.0 == "Secondary return", model.engine.movementPhase == nil { returned = true }
+        }
+        defer { model.engine.changed = previousChanged; model.verificationRandom = nil; model.stop() }
+        model.verificationRandom = { $0.lowerBound + ($0.upperBound - $0.lowerBound) * 0.63 }
+        let began = model.clock
+        model.engine.start(at: target, settings: settings)
+        while !returned && model.engine.active && model.clock < began + 12 { await sleep(0.02) }
+        let ended = model.clock
+        let returnPoint = model.mouse.currentPosition()
+        model.stop(); await sleep(0.12)
+        let rows = uniqueEvents(since: began)
+        let downs = rows.filter { ($0["type"] as? String) == "rightDown" }
+        let ups = rows.filter { ($0["type"] as? String) == "rightUp" }
+        check("Secondary area: one original pair and one purple-area pair", returned && downs.count == 2 && ups.count == 2 && downs.filter { area.contains(eventPoint($0)) }.count == 1)
+        check("Secondary area: preserves target and curves back before next regular click", model.target == target && returnPoint.map { movementDistance($0, target) < 0.01 } == true)
+        check("Secondary timer wakes independently of a 100-second regular interval", phases.first.map { $0.1 >= began + 0.98 && $0.1 < began + 1.6 } == true)
+        check("Secondary area: ordered outward, click, return phases", phases.map(\.0) == ["Secondary outward", "Secondary click", "Secondary return"])
+        for index in phases.indices where phases[index].0 != "Secondary click" {
+            let phase = phases[index]
+            let until = index + 1 < phases.count ? phases[index + 1].1 : ended
+            let segment = rows.filter { eventTime($0) >= phase.1 && eventTime($0) < until }
+            let points = segment.filter { ($0["type"] as? String) == "move" }.map(eventPoint)
+            let hasDown = segment.contains { ["rightDown", "leftDown"].contains($0["type"] as? String ?? "") }
+            var deviation = 0.0
+            if let first = points.first, let last = points.last {
+                let dx = last.x - first.x, dy = last.y - first.y, length = max(0.001, movementDistance(first, last))
+                deviation = points.map { abs(dx * ($0.y - first.y) - dy * ($0.x - first.x)) / length }.max() ?? 0
+            }
+            check("\(phase.0): curved samples and no travel click", points.count >= 8 && deviation > 0.03 && !hasDown)
+        }
+        let countAfterStop = mouseOutputCount(); await sleep(1.1)
+        check("Secondary area: Stop cancels future visits", mouseOutputCount() == countAfterStop && model.status == .stopped)
+    }
     private func run() async {
         let saved = model.settings
         model.stop(); model.refreshPermissions()
@@ -485,6 +544,7 @@ import ScoutClicker
             check("Timer expiry cancels wandering before one exact final click",motionExpired && motionFinals.count==1 && distance(motionFinals[0],exactFinal)<0.0001 && mouseOutputCount()==motionDone)
             try await verifyMovementTrajectories(emergency: saved)
             try await verifyTravelClicking(emergency: saved)
+            try await verifySecondaryClicking(emergency: saved)
             let buttonEvents=events().filter { ["leftDown","leftUp","rightDown","rightUp"].contains($0["type"] as? String ?? "") }
             check("Posted button-down events have matching button-up events",buttonEvents.filter { ($0["type"] as? String)?.hasSuffix("Down")==true }.count == buttonEvents.filter { ($0["type"] as? String)?.hasSuffix("Up")==true }.count)
         } catch { check("External verification completed",false,error.localizedDescription) }
