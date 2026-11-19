@@ -1,9 +1,8 @@
-# Screen Scout 2.4.0
+# Screen Scout 2.4.1
 
 **[Download Screen Scout for Mac (ZIP)](https://github.com/anaumovs/screen-scout/releases/latest/download/Screen-Scout-macOS.zip)**
 
-Requires Apple silicon and macOS 14 or later. Unzip the download and drag Screen Scout into Applications.
-
+For Intel and Apple silicon Macs running macOS 14 or later. Unzip the download and drag Screen Scout into Applications.
 
 Adds optional secondary-area clicking in Advanced: draw a purple area, choose a minimum and maximum wait (defaults 5–10 seconds), and the pointer curves there, clicks once, and curves back. The option defaults off. Red blocked regions constrain these visits. Pause freezes the wait; Stop resets it. Moving the pointer during a visit pauses it.
 
@@ -28,7 +27,7 @@ open "dist/Screen Scout.app"
 
 The build produces `dist/Screen Scout.app`, the companion `Click Test Pad.app`, and a ZIP package. Build outputs are generated locally and are not tracked in this repository. You can copy Screen Scout to Applications and drag it to the Dock for quick access. The custom icon artwork is saved in `Resources/ScreenScoutIcon.png` and included automatically by the build script.
 
-Open `dist/Screen Scout.app` on an Apple Silicon Mac running macOS 14 or later. Enable **Screen Scout** in **System Settings → Privacy & Security → Accessibility** and **Input Monitoring**. The app has buttons for requesting these permissions and opening the settings panes. Screen Recording is not required.
+Open `dist/Screen Scout.app` on an Intel or Apple silicon Mac running macOS 14 or later. Enable **Screen Scout** in **System Settings → Privacy & Security → Accessibility** and **Input Monitoring**. The app has buttons for requesting these permissions and opening the settings panes. Screen Recording is not required.
 
 A new locally signed build can invalidate old grants even if their switches still look enabled. The app cannot grant its own permissions. If needed, remove the stale Screen Scout entry and approve the current build again, then reopen it. Clicking stays unavailable without permissions and global shortcuts. Regular clicking shows Starting until its mouse events are acknowledged by macOS; a movement-only or timer-only session does not need a click acknowledgement.
 
