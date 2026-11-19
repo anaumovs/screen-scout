@@ -1,5 +1,10 @@
 # Screen Scout 2.4.0
 
+**[Download Screen Scout for Mac (ZIP)](https://github.com/anaumovs/screen-scout/releases/latest/download/Screen-Scout-macOS.zip)**
+
+Requires Apple silicon and macOS 14 or later. Unzip the download and drag Screen Scout into Applications.
+
+
 Adds optional secondary-area clicking in Advanced: draw a purple area, choose a minimum and maximum wait (defaults 5–10 seconds), and the pointer curves there, clicks once, and curves back. The option defaults off. Red blocked regions constrain these visits. Pause freezes the wait; Stop resets it. Moving the pointer during a visit pauses it.
 
 # Screen Scout 2.3 — macOS auto-clicker
